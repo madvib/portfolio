@@ -28,7 +28,7 @@ export function Footer() {
                 </div>
 
                 <p className="text-zinc-600 text-sm">
-                    © {new Date().getFullYear()} Neon Void. Built with React
+                    © {new Date().getFullYear()} Micah Cotton. Built with React
                     & Tailwind.
                 </p>
             </div>

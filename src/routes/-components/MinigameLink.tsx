@@ -11,7 +11,7 @@ export function MinigameLink() {
                 size={16}
                 className="group-hover:animate-bounce"
             />
-            <span className="text-xs font-mono font-bold">
+            <span className="text-xs font-mono font-bold hidden sm:inline">
                 PLAY MINIGAME
             </span>
         </Link>

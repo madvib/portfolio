@@ -3,7 +3,6 @@ import { X, Play, RotateCcw, Trophy, Zap } from "lucide-react";
 import { motion } from "motion/react";
 import { type Card, GameState, type GameStats } from "../../types";
 import { SKILLS } from "../../constants";
-import { TiltedCard } from "./TiltedCard";
 
 export interface MinigameProps {
     onClose: () => void;
@@ -22,6 +21,7 @@ export const Minigame: React.FC<MinigameProps> = ({ onClose }) => {
     const [triesLeft, setTriesLeft] = useState(3);
     const [showMismatch, setShowMismatch] = useState(false);
     const [showLevelComplete, setShowLevelComplete] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
 
     // Initialize cards when level changes during gameplay
     useEffect(() => {
@@ -77,6 +77,7 @@ export const Minigame: React.FC<MinigameProps> = ({ onClose }) => {
     const handleCardClick = (cardId: string) => {
         if (gameState !== GameState.PLAYING) return;
         if (triesLeft <= 0) return;
+        if (isProcessing) return;
 
         const card = cards.find((c) => c.id === cardId);
         if (!card || card.isFlipped || card.isMatched) return;
@@ -91,6 +92,7 @@ export const Minigame: React.FC<MinigameProps> = ({ onClose }) => {
         setSelectedCards(newSelected);
 
         if (newSelected.length === 2) {
+            setIsProcessing(true);
             setStats((prev) => ({ ...prev, moves: prev.moves + 1 }));
             checkForMatch(newSelected, newCards);
         }
@@ -118,6 +120,7 @@ export const Minigame: React.FC<MinigameProps> = ({ onClose }) => {
                 }));
 
                 setSelectedCards([]);
+                setIsProcessing(false);
 
                 // Check if level is complete
                 const updatedCards = cards.map((c) =>
@@ -154,6 +157,7 @@ export const Minigame: React.FC<MinigameProps> = ({ onClose }) => {
                 );
                 setSelectedCards([]);
                 setShowMismatch(false);
+                setIsProcessing(false);
 
                 if (triesLeft <= 1) {
                     setGameState(GameState.GAME_OVER);
@@ -346,23 +350,34 @@ export const Minigame: React.FC<MinigameProps> = ({ onClose }) => {
                     <div
                         className={`grid ${getGridConfig().cols} ${getGridConfig().gap}`}
                     >
-                        {cards.map((card) => (
-                            <TiltedCard key={card.id}>
+                        {cards.map((card) => {
+                            const isClickable =
+                                !card.isFlipped &&
+                                !card.isMatched &&
+                                !isProcessing;
+                            return (
                                 <button
+                                    key={card.id}
                                     onClick={() => handleCardClick(card.id)}
-                                    disabled={card.isFlipped || card.isMatched}
+                                    disabled={
+                                        card.isFlipped ||
+                                        card.isMatched ||
+                                        isProcessing
+                                    }
                                     className={`
-                    aspect-square rounded-lg font-bold text-2xl transition-all duration-300 transform
-                    ${
-                        card.isFlipped || card.isMatched
-                            ? `bg-gradient-to-br ${card.colors} rotate-0 scale-100`
-                            : "bg-gradient-to-br from-zinc-700 to-zinc-800 hover:from-zinc-600 hover:to-zinc-700 hover:scale-105"
-                    }
-                    ${card.isMatched ? "opacity-60 scale-95" : ""}
-                    ${showMismatch && !card.isMatched && card.isFlipped ? "animate-pulse border-2 border-red-500" : ""}
-                    ${!card.isFlipped && !card.isMatched && triesLeft <= 1 ? "animate-pulse border-2 border-red-500/50" : ""}
-                    disabled:cursor-not-allowed interactive w-full h-full
-                  `}
+                        aspect-square rounded-lg font-bold text-2xl transition-all duration-300
+                        ${
+                            card.isFlipped || card.isMatched
+                                ? `bg-gradient-to-br ${card.colors} scale-100`
+                                : "bg-gradient-to-br from-zinc-700 to-zinc-800 hover:from-zinc-600 hover:to-zinc-700 hover:scale-105"
+                        }
+                        ${card.isMatched ? "opacity-60 scale-95" : ""}
+                        ${showMismatch && !card.isMatched && card.isFlipped ? "animate-pulse border-2 border-red-500" : ""}
+                        ${!card.isFlipped && !card.isMatched && triesLeft <= 1 ? "animate-pulse border-2 border-red-500/50" : ""}
+                        ${isProcessing && !card.isFlipped && !card.isMatched ? "opacity-50" : ""}
+                        ${isClickable ? "cursor-pointer" : "cursor-not-allowed"}
+                        interactive w-full h-full
+                      `}
                                 >
                                     {card.isFlipped || card.isMatched ? (
                                         <div className="flex flex-col items-center justify-center h-full text-white">
@@ -382,8 +397,8 @@ export const Minigame: React.FC<MinigameProps> = ({ onClose }) => {
                                         </div>
                                     )}
                                 </button>
-                            </TiltedCard>
-                        ))}
+                            );
+                        })}
                     </div>
 
                     {/* Level Complete Animation Overlay */}

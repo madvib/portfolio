@@ -18,10 +18,23 @@ interface BlogPost {
 }
 
 // Load all markdown files in ./posts/
-const modules = import.meta.glob("./posts/*.md", {
+const publishedModules = import.meta.glob("./posts/*.md", {
     eager: true,
     query: "?raw",
 });
+
+// Load drafts (only processed in DEV, but glob needs to be static)
+const draftModules = import.meta.glob("./drafts/*.md", {
+    eager: true,
+    query: "?raw",
+});
+
+let modules = { ...publishedModules };
+
+// In DEV mode, include drafts
+if (import.meta.env.DEV) {
+    modules = { ...modules, ...draftModules };
+}
 
 const blogPosts: BlogPost[] = Object.values(modules).map((module: any) => {
     const { attributes, body } = fm<BlogPostAttributes>(module.default);
@@ -33,7 +46,7 @@ const blogPosts: BlogPost[] = Object.values(modules).map((module: any) => {
         readTime: attributes.readTime,
         content: body,
     };
-});
+}).filter((post) => post.title && post.date).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
 export function getBlogPosts() {
     return blogPosts.map((post) => ({

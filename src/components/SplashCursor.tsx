@@ -70,10 +70,25 @@ export default function SplashCursor({
     boundaryElement = null,
 }: SplashCursorProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const webGLFailedRef = useRef(false);
 
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
+        if (webGLFailedRef.current) return;
+
+        // Detect mobile-only devices (no mouse) for ambient mode & lower resolution
+        // Uses (hover: none) to exclude touch-screen laptops that have a mouse
+        const isMobileOnly =
+            window.matchMedia &&
+            window.matchMedia("(hover: none) not (pointer: fine)").matches;
+
+        // Lower resolution on mobile for performance
+        if (isMobileOnly) {
+            SIM_RESOLUTION = Math.min(SIM_RESOLUTION, 64);
+            DYE_RESOLUTION = Math.min(DYE_RESOLUTION, 512);
+            PRESSURE_ITERATIONS = Math.min(PRESSURE_ITERATIONS, 12);
+        }
 
         function isWithinBoundary(x: number, y: number): boolean {
             if (!boundaryElement) return true;
@@ -112,9 +127,9 @@ export default function SplashCursor({
             }
         }
 
-        let pointers: Pointer[] = [pointerPrototype()];
+        const pointers: Pointer[] = [pointerPrototype()];
 
-        let config = {
+        const config = {
             SIM_RESOLUTION: SIM_RESOLUTION!,
             DYE_RESOLUTION: DYE_RESOLUTION!,
             CAPTURE_RESOLUTION: CAPTURE_RESOLUTION!,
@@ -133,8 +148,20 @@ export default function SplashCursor({
         };
 
         if (!canvas) return;
-        const { gl, ext } = getWebGLContext(canvas);
-        if (!gl || !ext) return;
+
+        let glResult: ReturnType<typeof getWebGLContext> | null = null;
+        try {
+            glResult = getWebGLContext(canvas);
+        } catch {
+            console.warn("SplashCursor: WebGL not available, skipping.");
+            webGLFailedRef.current = true;
+            return;
+        }
+        if (!glResult?.gl || !glResult?.ext) {
+            webGLFailedRef.current = true;
+            return;
+        }
+        const { gl, ext } = glResult;
 
         if (!ext.supportLinearFiltering) {
             config.DYE_RESOLUTION = 256;
@@ -164,7 +191,7 @@ export default function SplashCursor({
             }
 
             if (!gl) {
-                throw new Error("Unable to initialize WebGL.");
+                return null;
             }
 
             const isWebGL2 = "drawBuffers" in gl;
@@ -382,7 +409,7 @@ export default function SplashCursor({
         }
 
         function getUniforms(program: WebGLProgram) {
-            let uniforms: Record<string, WebGLUniformLocation | null> = {};
+            const uniforms: Record<string, WebGLUniformLocation | null> = {};
             const uniformCount = gl.getProgramParameter(
                 program,
                 gl.ACTIVE_UNIFORMS,
@@ -1068,7 +1095,7 @@ export default function SplashCursor({
             const w = gl.drawingBufferWidth;
             const h = gl.drawingBufferHeight;
             const aspectRatio = w / h;
-            let aspect = aspectRatio < 1 ? 1 / aspectRatio : aspectRatio;
+            const aspect = aspectRatio < 1 ? 1 / aspectRatio : aspectRatio;
             const min = Math.round(resolution);
             const max = Math.round(resolution * aspect);
             if (w > h) {
@@ -1087,6 +1114,7 @@ export default function SplashCursor({
 
         let lastUpdateTime = Date.now();
         let colorUpdateTimer = 0.0;
+        let animFrameId: number | null = null;
 
         function updateFrame() {
             const dt = calcDeltaTime();
@@ -1095,7 +1123,7 @@ export default function SplashCursor({
             applyInputs();
             step(dt);
             render(null);
-            requestAnimationFrame(updateFrame);
+            animFrameId = requestAnimationFrame(updateFrame);
         }
 
         function calcDeltaTime() {
@@ -1548,76 +1576,206 @@ export default function SplashCursor({
             return ((value - min) % range) + min;
         }
 
-        window.addEventListener("mousedown", (e) => {
-            if (!isWithinBoundary(e.clientX, e.clientY)) return;
-
-            const pointer = pointers[0];
-            const relativePos = getRelativePosition(e.clientX, e.clientY);
-            const posX = scaleByPixelRatio(relativePos.x);
-            const posY = scaleByPixelRatio(relativePos.y);
-            updatePointerDownData(pointer, -1, posX, posY);
-            clickSplat(pointer);
-        });
-
-        function handleFirstMouseMove(e: MouseEvent) {
-            if (!isWithinBoundary(e.clientX, e.clientY)) return;
-
-            const pointer = pointers[0];
-            const relativePos = getRelativePosition(e.clientX, e.clientY);
-            const posX = scaleByPixelRatio(relativePos.x);
-            const posY = scaleByPixelRatio(relativePos.y);
-            const color = generateColor();
-            updateFrame();
-            updatePointerMoveData(pointer, posX, posY, color);
-            document.body.removeEventListener(
-                "mousemove",
-                handleFirstMouseMove,
+        // Track all listeners for proper cleanup
+        const cleanupFns: (() => void)[] = [];
+        function addWindowListener<K extends keyof WindowEventMap>(
+            event: K,
+            handler: (e: WindowEventMap[K]) => void,
+            options?: boolean | AddEventListenerOptions,
+        ) {
+            window.addEventListener(event, handler, options);
+            cleanupFns.push(() =>
+                window.removeEventListener(event, handler, options),
             );
         }
-        document.body.addEventListener("mousemove", handleFirstMouseMove);
+        function addBodyListener<K extends keyof HTMLElementEventMap>(
+            event: K,
+            handler: (e: HTMLElementEventMap[K]) => void,
+        ) {
+            document.body.addEventListener(event, handler);
+            cleanupFns.push(() =>
+                document.body.removeEventListener(event, handler),
+            );
+        }
 
-        window.addEventListener("mousemove", (e) => {
-            if (!isWithinBoundary(e.clientX, e.clientY)) return;
+        if (isMobileOnly) {
+            // AMBIENT MODE: Multi-Emitter Generative Pattern
+            // Use 3 pointers to create complex, interfering fluid dynamics (not just one "ghost cursor")
+            
+            // Ensure we have enough pointers
+            if (pointers.length < 3) {
+                pointers.push(new pointerPrototype());
+                pointers.push(new pointerPrototype());
+            }
 
-            const pointer = pointers[0];
-            const relativePos = getRelativePosition(e.clientX, e.clientY);
-            const posX = scaleByPixelRatio(relativePos.x);
-            const posY = scaleByPixelRatio(relativePos.y);
-            const color = pointer.color;
-            updatePointerMoveData(pointer, posX, posY, color);
-        });
+            let ambientRafId: number | null = null;
+            let t = Math.random() * 100;
+            const speed = 0.003; // Slow, languid
+            
+            // Configuration for 3 distinct emitters
+            // Each has unique Lissajous frequencies (prime-ish) to avoid synchronization
+            const emitters = [
+                { fX: 1.0, fY: 0.8, phase: 0.0, color: generateColor() }, // Primary: large loops
+                { fX: 1.4, fY: 1.1, phase: 2.0, color: generateColor() }, // Secondary: faster, offset
+                { fX: 0.6, fY: 0.9, phase: 4.0, color: generateColor() }, // Tertiary: slow drift
+            ];
 
-        function handleFirstTouchStart(e: TouchEvent) {
-            const touches = e.targetTouches;
-            const pointer = pointers[0];
-            for (let i = 0; i < touches.length; i++) {
-                if (!isWithinBoundary(touches[i].clientX, touches[i].clientY))
-                    continue;
+            // Initialize pointers
+            pointers.forEach((p, i) => {
+                p.down = true;
+                p.color = emitters[i].color;
+                p.texcoordX = 0.5;
+                p.texcoordY = 0.5;
+                p.prevTexcoordX = 0.5;
+                p.prevTexcoordY = 0.5;
+            });
+            
+            function ambientStep() {
+                // 1. Dynamic Boundary Check
+                let minX = 0, maxX = 1, minY = 0, maxY = 1;
+                
+                // Force re-measure to catch layout shifts
+                if (boundaryElement) {
+                    const rect = boundaryElement.getBoundingClientRect();
+                    const canvasWidth = canvas!.width;
+                    const canvasHeight = canvas!.height;
 
+                    // If rect is inexplicably small (layout not ready), default to full screen temporarily
+                    // This prevents the "tiny box" issue on initial load
+                    if (rect.width < 100 || rect.height < 100) {
+                        minX = 0; maxX = 1; minY = 0; maxY = 1;
+                    } else {
+                        minX = Math.max(0, rect.left / canvasWidth);
+                        maxX = Math.min(1, rect.right / canvasWidth);
+                        minY = Math.max(0, rect.top / canvasHeight);
+                        maxY = Math.min(1, rect.bottom / canvasHeight);
+                    }
+                }
+
+                t += speed;
+
+                const width = maxX - minX;
+                const height = maxY - minY;
+                const boxCenterX = minX + width / 2;
+                const boxCenterY = minY + height / 2;
+
+                // Update all 3 pointers
+                emitters.forEach((config, i) => {
+                    const pointer = pointers[i];
+                    
+                    // Generative Path (Lissajous)
+                    const x = Math.sin(t * config.fX + config.phase);
+                    const y = Math.sin(t * config.fY + config.phase);
+
+                    // Scale to box (0.45 = 90% coverage)
+                    const finalX = boxCenterX + x * (width * 0.45);
+                    const finalY = boxCenterY + y * (height * 0.45);
+
+                    // Update WebGL pointer data
+                    const posX = finalX * canvas!.width;
+                    const posY = (1 - finalY) * canvas!.height;
+                    
+                    // Occasional color shift
+                    if (Math.random() > 0.992) {
+                        pointer.color = generateColor();
+                    }
+
+                    updatePointerMoveData(pointer, posX, posY, pointer.color);
+                });
+
+                ambientRafId = requestAnimationFrame(ambientStep);
+            }
+
+            // Start loop
+            updateFrame();
+            ambientStep();
+
+            cleanupFns.push(() => {
+                if (ambientRafId !== null) cancelAnimationFrame(ambientRafId);
+            });
+        } else {
+            // DESKTOP MODE: cursor-tracking input
+            const handleMouseDown = (e: MouseEvent) => {
+                if (!isWithinBoundary(e.clientX, e.clientY)) return;
+
+                const pointer = pointers[0];
+                const relativePos = getRelativePosition(e.clientX, e.clientY);
+                const posX = scaleByPixelRatio(relativePos.x);
+                const posY = scaleByPixelRatio(relativePos.y);
+                updatePointerDownData(pointer, -1, posX, posY);
+                clickSplat(pointer);
+            };
+            addWindowListener("mousedown", handleMouseDown);
+
+            function handleFirstMouseMove(e: MouseEvent) {
+                if (!isWithinBoundary(e.clientX, e.clientY)) return;
+
+                const pointer = pointers[0];
                 const relativePos = getRelativePosition(
-                    touches[i].clientX,
-                    touches[i].clientY,
+                    e.clientX,
+                    e.clientY,
                 );
                 const posX = scaleByPixelRatio(relativePos.x);
                 const posY = scaleByPixelRatio(relativePos.y);
+                const color = generateColor();
                 updateFrame();
-                updatePointerDownData(
-                    pointer,
-                    touches[i].identifier,
-                    posX,
-                    posY,
+                updatePointerMoveData(pointer, posX, posY, color);
+                document.body.removeEventListener(
+                    "mousemove",
+                    handleFirstMouseMove,
                 );
             }
-            document.body.removeEventListener(
-                "touchstart",
-                handleFirstTouchStart,
-            );
-        }
-        document.body.addEventListener("touchstart", handleFirstTouchStart);
+            addBodyListener("mousemove", handleFirstMouseMove);
 
-        window.addEventListener(
-            "touchstart",
-            (e) => {
+            const handleMouseMove = (e: MouseEvent) => {
+                if (!isWithinBoundary(e.clientX, e.clientY)) return;
+
+                const pointer = pointers[0];
+                const relativePos = getRelativePosition(
+                    e.clientX,
+                    e.clientY,
+                );
+                const posX = scaleByPixelRatio(relativePos.x);
+                const posY = scaleByPixelRatio(relativePos.y);
+                const color = pointer.color;
+                updatePointerMoveData(pointer, posX, posY, color);
+            };
+            addWindowListener("mousemove", handleMouseMove);
+
+            function handleFirstTouchStart(e: TouchEvent) {
+                const touches = e.targetTouches;
+                const pointer = pointers[0];
+                for (let i = 0; i < touches.length; i++) {
+                    if (
+                        !isWithinBoundary(
+                            touches[i].clientX,
+                            touches[i].clientY,
+                        )
+                    )
+                        continue;
+
+                    const relativePos = getRelativePosition(
+                        touches[i].clientX,
+                        touches[i].clientY,
+                    );
+                    const posX = scaleByPixelRatio(relativePos.x);
+                    const posY = scaleByPixelRatio(relativePos.y);
+                    updateFrame();
+                    updatePointerDownData(
+                        pointer,
+                        touches[i].identifier,
+                        posX,
+                        posY,
+                    );
+                }
+                document.body.removeEventListener(
+                    "touchstart",
+                    handleFirstTouchStart,
+                );
+            }
+            addBodyListener("touchstart", handleFirstTouchStart);
+
+            const handleTouchStart = (e: TouchEvent) => {
                 const touches = e.targetTouches;
                 const pointer = pointers[0];
                 for (let i = 0; i < touches.length; i++) {
@@ -1642,13 +1800,10 @@ export default function SplashCursor({
                         posY,
                     );
                 }
-            },
-            false,
-        );
+            };
+            addWindowListener("touchstart", handleTouchStart, false);
 
-        window.addEventListener(
-            "touchmove",
-            (e) => {
+            const handleTouchMove = (e: TouchEvent) => {
                 const touches = e.targetTouches;
                 const pointer = pointers[0];
                 for (let i = 0; i < touches.length; i++) {
@@ -1666,28 +1821,39 @@ export default function SplashCursor({
                     );
                     const posX = scaleByPixelRatio(relativePos.x);
                     const posY = scaleByPixelRatio(relativePos.y);
-                    updatePointerMoveData(pointer, posX, posY, pointer.color);
+                    updatePointerMoveData(
+                        pointer,
+                        posX,
+                        posY,
+                        pointer.color,
+                    );
                 }
-            },
-            false,
-        );
+            };
+            addWindowListener("touchmove", handleTouchMove, false);
 
-        window.addEventListener("touchend", (e) => {
-            const touches = e.changedTouches;
-            const pointer = pointers[0];
-            for (let i = 0; i < touches.length; i++) {
-                updatePointerUpData(pointer);
-            }
-        });
+            const handleTouchEnd = (e: TouchEvent) => {
+                const touches = e.changedTouches;
+                const pointer = pointers[0];
+                for (let i = 0; i < touches.length; i++) {
+                    updatePointerUpData(pointer);
+                }
+            };
+            addWindowListener("touchend", handleTouchEnd);
+        }
 
         updateCanvasPosition();
         const handleResize = () => updateCanvasPosition();
-        window.addEventListener("resize", handleResize);
-        window.addEventListener("scroll", handleResize);
+        addWindowListener("resize", handleResize);
+        addWindowListener("scroll", handleResize);
 
         return () => {
-            window.removeEventListener("resize", handleResize);
-            window.removeEventListener("scroll", handleResize);
+            // Cancel animation frame
+            if (animFrameId !== null) {
+                cancelAnimationFrame(animFrameId);
+                animFrameId = null;
+            }
+            // Clean up all event listeners and timers
+            for (const fn of cleanupFns) fn();
         };
     }, [
         SIM_RESOLUTION,

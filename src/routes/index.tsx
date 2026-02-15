@@ -1,5 +1,5 @@
 import { createRoute, Link } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { ExternalLink, ArrowRight, Code } from "lucide-react";
 import { PROJECTS, PORTFOLIO_DATA, SKILLS } from "../constants";
 import SplashCursor from "../components/SplashCursor";
@@ -16,42 +16,59 @@ export const indexRoute = createRoute({
 export const Route = indexRoute;
 
 function HomeComponent() {
-    const [scrollY, setScrollY] = useState(0);
-    const [introSection, setIntroSection] = useState<HTMLElement | null>(null);
+    const [introSectionEl, setIntroSectionEl] = useState<HTMLElement | null>(null);
+    const digitalRef = useRef<HTMLSpanElement>(null);
+    const architectRef = useRef<HTMLSpanElement>(null);
 
+    // Ref-based parallax: direct DOM transform, no React re-render
     useEffect(() => {
+        let rafId: number | null = null;
+
         const handleScroll = () => {
-            setScrollY(window.scrollY);
+            if (rafId !== null) return;
+            rafId = requestAnimationFrame(() => {
+                const y = window.scrollY;
+                if (digitalRef.current) {
+                    digitalRef.current.style.transform = `translateX(${-y * 0.5}px)`;
+                }
+                if (architectRef.current) {
+                    architectRef.current.style.transform = `translateX(${y * 0.5}px)`;
+                }
+                rafId = null;
+            });
         };
-        window.addEventListener("scroll", handleScroll);
-        return () => window.removeEventListener("scroll", handleScroll);
+        window.addEventListener("scroll", handleScroll, { passive: true });
+        return () => {
+            window.removeEventListener("scroll", handleScroll);
+            if (rafId !== null) cancelAnimationFrame(rafId);
+        };
+    }, []);
+
+    const onIntroRef = useCallback((el: HTMLElement | null) => {
+        setIntroSectionEl(el);
     }, []);
 
     return (
         <>
             {/* Fluid Splash Cursor */}
-            <SplashCursor boundaryElement={introSection} />
+            <SplashCursor boundaryElement={introSectionEl} />
 
             {/* Intro Section - Parallax */}
             <section
-                ref={setIntroSection}
+                ref={onIntroRef}
                 className="relative h-screen flex items-center justify-center overflow-hidden"
             >
                 <div className="relative z-10 max-w-4xl px-6 text-center">
                     <h1 className="text-6xl md:text-9xl font-black tracking-tighter mb-6 leading-tight">
                         <span
-                            className="block"
-                            style={{
-                                transform: `translateX(${-scrollY * 0.5}px)`,
-                            }}
+                            ref={digitalRef}
+                            className="block will-change-transform"
                         >
                             DIGITAL
                         </span>
                         <span
-                            className="block text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-500"
-                            style={{
-                                transform: `translateX(${scrollY * 0.5}px)`,
-                            }}
+                            ref={architectRef}
+                            className="block text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-500 will-change-transform"
                         >
                             ARCHITECT
                         </span>
@@ -87,13 +104,14 @@ function HomeComponent() {
                             node: (
                                 <span className="flex items-center gap-3 text-zinc-300 font-mono text-sm group/skill">
                                     <span
-                                        className={`w-6 h-6 [&>svg]:w-full [&>svg]:h-full [&>svg]:fill-current text-zinc-400 transition-colors group-hover/skill:[&>svg]:text-[${skill.color}]`}
+                                        className={`w-6 h-6 [&>svg]:w-full [&>svg]:h-full [&>svg]:fill-current text-zinc-300 transition-colors bg-white/5 rounded p-0.5`}
                                         dangerouslySetInnerHTML={{
                                             __html: skill.svg,
                                         }}
+                                        style={{ color: skill.color }}
                                     />
                                     <span
-                                        className={`text-zinc-400 transition-colors group-hover/skill:text-[${skill.color}]`}
+                                        className={`text-zinc-200 font-medium`}
                                     >
                                         {skill.name}
                                     </span>
@@ -129,9 +147,12 @@ function HomeComponent() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                         {PROJECTS.map((project) => (
-                            <div
-                                key={project.id}
-                                className="group relative bg-zinc-900/50 border border-zinc-800 p-1 hover:border-cyan-500/50 transition-all duration-300 interactive overflow-hidden"
+                            <a
+                                key={project.title}
+                                href={project.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="group relative aspect-[4/3] bg-zinc-900 border border-zinc-800 overflow-hidden hover:border-zinc-700 transition-colors block"
                             >
                                 <div className="relative aspect-video bg-zinc-800 overflow-hidden mb-4 grayscale group-hover:grayscale-0 transition-all duration-500">
                                     <img
@@ -165,7 +186,7 @@ function HomeComponent() {
                                         ))}
                                     </div>
                                 </div>
-                            </div>
+                            </a>
                         ))}
                     </div>
                 </div>
@@ -218,7 +239,7 @@ function HomeComponent() {
                     <div className="mt-8 text-center">
                         <Link
                             to="/blog"
-                            className="inline-flex items-center gap-2 text-cyan-400 hover:text-cyan-300 transition-colors font-mono text-sm group"
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded text-sm text-zinc-400 hover:text-white hover:border-zinc-700 transition-colors whitespace-nowrap"
                         >
                             VIEW ALL POSTS
                             <ArrowRight

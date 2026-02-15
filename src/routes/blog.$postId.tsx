@@ -1,9 +1,16 @@
 import { createRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Calendar, Clock } from "lucide-react";
+import { useEffect, useState } from "react";
+import { marked } from "marked";
+import hljs from "highlight.js/lib/core";
+import typescript from "highlight.js/lib/languages/typescript";
+import javascript from "highlight.js/lib/languages/javascript";
+import "highlight.js/styles/base16/gruvbox-dark-soft.css";
 import { rootRoute } from "./__root";
 import { getBlogPost } from "../content/blog/posts";
-import { marked } from "marked";
-import { useEffect, useState } from "react";
+
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("javascript", javascript);
 
 export const blogPostRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -23,10 +30,14 @@ function BlogPostPage() {
             const parseMarkdown = async () => {
                 const html = await marked.parse(post.content);
                 setHtmlContent(html);
+  
             };
             parseMarkdown();
         }
     }, [post]);
+    useEffect(() => {
+        hljs.highlightAll();
+    }, [htmlContent]);
 
     if (!post) {
         return (
