@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { BlogLink } from "./BlogLink";
 import { MinigameLink } from "./MinigameLink";
+import { FabricConverterLink } from "./FabricConverterLink";
+import { PngConverterLink } from "./PngConverterLink";
 
 export function Navigation() {
     return (
@@ -13,6 +15,8 @@ export function Navigation() {
             </Link>
             <div className="flex items-center gap-4">
                 <BlogLink />
+                <PngConverterLink />
+                <FabricConverterLink />
                 <MinigameLink />
             </div>
         </nav>

@@ -1,0 +1,21 @@
+[package]
+name = "vtracer-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+# Enable the "wasm" feature so fastrand uses JS-based RNG on the WASM target
+vtracer = { version = "0.6.5", features = ["wasm"] }
+# PathSimplifyMode lives in visioncortex, not re-exported through vtracer
+visioncortex = "0.8.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+console_error_panic_hook = "0.1"
+
+[profile.release]
+opt-level = "s"
+lto = true

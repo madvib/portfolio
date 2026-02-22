@@ -3,6 +3,8 @@ import { indexRoute } from './routes/index';
 import { minigameRoute } from './routes/minigame';
 import { blogIndexRoute } from './routes/blog';
 import { blogPostRoute } from './routes/blog.$postId';
+import { fabricConverterRoute } from './routes/fabric-converter';
+import { pngConverterRoute } from './routes/png-converter';
 
 // Route tree for TanStack Router
 export const routeTree = rootRoute.addChildren([
@@ -10,4 +12,6 @@ export const routeTree = rootRoute.addChildren([
   minigameRoute,
   blogIndexRoute,
   blogPostRoute,
+  fabricConverterRoute,
+  pngConverterRoute,
 ]);
