@@ -177,23 +177,30 @@ export const Minigame: React.FC<MinigameProps> = ({ onClose }) => {
         const totalCards = cards.length;
         if (totalCards <= 8) {
             // Level 1: 8 cards - 4 columns, 2 rows
-            return { cols: "grid-cols-4", gap: "gap-3", cardSize: "" };
+            return { cols: "grid-cols-4", gap: "gap-2 sm:gap-3" };
         } else if (totalCards <= 16) {
-            // Level 2: 16 cards - 8 columns, 2 rows (or 4 columns on mobile)
-            return {
-                cols: "grid-cols-4 md:grid-cols-8",
-                gap: "gap-2 md:gap-3",
-                cardSize: "",
-            };
+            // Level 2: 16 cards - 4 columns, 4 rows (square-ish)
+            return { cols: "grid-cols-4 md:grid-cols-4 lg:grid-cols-4", gap: "gap-2" };
         } else {
             // Level 3: 24 cards - 6 columns, 4 rows
-            return {
-                cols: "grid-cols-4 md:grid-cols-6 lg:grid-cols-8",
-                gap: "gap-2",
-                cardSize: "",
-            };
+            return { cols: "grid-cols-4 sm:grid-cols-6", gap: "gap-2" };
         }
     };
+
+    // Calculate if we should show all cards (on game over)
+    const shouldShowAllCards = gameState === GameState.GAME_OVER || gameState === GameState.WIN;
+
+    // Flip all cards when game ends
+    useEffect(() => {
+        if (shouldShowAllCards && cards.length > 0) {
+            setCards((prev) =>
+                prev.map((card) => ({
+                    ...card,
+                    isFlipped: true,
+                }))
+            );
+        }
+    }, [shouldShowAllCards]);
 
     return (
         <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 cursor-auto">
@@ -203,8 +210,8 @@ export const Minigame: React.FC<MinigameProps> = ({ onClose }) => {
                     <div className="bg-zinc-900 border border-cyan-500 p-8 rounded-lg shadow-2xl text-center max-w-md w-full">
                         {gameState === GameState.IDLE && (
                             <>
-                                <Trophy className="w-16 h-16 text-cyan-400 mx-auto mb-4" />
-                                <h2 className="text-3xl font-bold text-cyan-400 mb-4 tracking-tighter">
+                                <Trophy className="w-16 h-16 text-cyan-500 mx-auto mb-4" />
+                                <h2 className="text-3xl font-bold text-cyan-500 mb-4 tracking-tighter">
                                     TECH MATCH
                                 </h2>
                                 <p className="text-zinc-400 mb-6">
@@ -291,10 +298,11 @@ export const Minigame: React.FC<MinigameProps> = ({ onClose }) => {
                 </div>
             )}
 
-            {/* Game Board */}
-            {gameState === GameState.PLAYING && (
-                <div className="w-full max-w-4xl">
+            {/* Game Board - also show cards on game over so user can see what they missed */}
+            {(gameState === GameState.PLAYING || gameState === GameState.GAME_OVER || gameState === GameState.WIN) && (
+                <div className="w-full max-w-6xl mx-auto">
                     {/* Game Stats */}
+                    {(gameState === GameState.PLAYING) && (
                     <div className="bg-zinc-900 border border-cyan-500 p-4 rounded-lg mb-6">
                         <div className="flex justify-between items-center text-white">
                             <div className="flex gap-6">
@@ -302,7 +310,7 @@ export const Minigame: React.FC<MinigameProps> = ({ onClose }) => {
                                     <span className="text-zinc-400 text-sm">
                                         Level
                                     </span>
-                                    <div className="text-2xl font-bold text-cyan-400">
+                                    <div className="text-2xl font-bold text-cyan-500">
                                         {level}/3
                                     </div>
                                 </div>
@@ -345,10 +353,11 @@ export const Minigame: React.FC<MinigameProps> = ({ onClose }) => {
                             </div>
                         </div>
                     </div>
+                    )}
 
                     {/* Cards Grid */}
                     <div
-                        className={`grid ${getGridConfig().cols} ${getGridConfig().gap}`}
+                        className={`grid ${getGridConfig().cols} ${getGridConfig().gap} my-4`}
                     >
                         {cards.map((card) => {
                             const isClickable =
@@ -362,12 +371,13 @@ export const Minigame: React.FC<MinigameProps> = ({ onClose }) => {
                                     disabled={
                                         card.isFlipped ||
                                         card.isMatched ||
-                                        isProcessing
+                                        isProcessing ||
+                                        shouldShowAllCards
                                     }
                                     className={`
                         aspect-square rounded-lg font-bold text-2xl transition-all duration-300
                         ${
-                            card.isFlipped || card.isMatched
+                            card.isFlipped || card.isMatched || shouldShowAllCards
                                 ? `bg-gradient-to-br ${card.colors} scale-100`
                                 : "bg-gradient-to-br from-zinc-700 to-zinc-800 hover:from-zinc-600 hover:to-zinc-700 hover:scale-105"
                         }
@@ -375,11 +385,12 @@ export const Minigame: React.FC<MinigameProps> = ({ onClose }) => {
                         ${showMismatch && !card.isMatched && card.isFlipped ? "animate-pulse border-2 border-red-500" : ""}
                         ${!card.isFlipped && !card.isMatched && triesLeft <= 1 ? "animate-pulse border-2 border-red-500/50" : ""}
                         ${isProcessing && !card.isFlipped && !card.isMatched ? "opacity-50" : ""}
+                        ${shouldShowAllCards ? "opacity-90" : ""}
                         ${isClickable ? "cursor-pointer" : "cursor-not-allowed"}
                         interactive w-full h-full
                       `}
                                 >
-                                    {card.isFlipped || card.isMatched ? (
+                                    {card.isFlipped || card.isMatched || shouldShowAllCards ? (
                                         <div className="flex flex-col items-center justify-center h-full text-white">
                                             <div
                                                 className="w-10 h-10 mb-2 [&>svg]:w-full [&>svg]:h-full [&>svg]:fill-current"
@@ -392,7 +403,7 @@ export const Minigame: React.FC<MinigameProps> = ({ onClose }) => {
                                             </div>
                                         </div>
                                     ) : (
-                                        <div className="flex items-center justify-center h-full text-cyan-400">
+                                        <div className="flex items-center justify-center h-full text-cyan-500">
                                             <Zap className="w-8 h-8" />
                                         </div>
                                     )}

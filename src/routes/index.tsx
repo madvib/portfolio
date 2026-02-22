@@ -1,5 +1,5 @@
 import { createRoute, Link } from "@tanstack/react-router";
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ExternalLink, ArrowRight, Code } from "lucide-react";
 import { PROJECTS, PORTFOLIO_DATA, SKILLS } from "../constants";
 import SplashCursor from "../components/SplashCursor";
@@ -16,9 +16,12 @@ export const indexRoute = createRoute({
 export const Route = indexRoute;
 
 function HomeComponent() {
-    const [introSectionEl, setIntroSectionEl] = useState<HTMLElement | null>(null);
+    const [introSectionEl, setIntroSectionEl] = useState<HTMLElement | null>(
+        null,
+    );
     const digitalRef = useRef<HTMLSpanElement>(null);
     const architectRef = useRef<HTMLSpanElement>(null);
+    const boundaryRef = useRef<HTMLDivElement>(null);
 
     // Ref-based parallax: direct DOM transform, no React re-render
     useEffect(() => {
@@ -44,8 +47,11 @@ function HomeComponent() {
         };
     }, []);
 
-    const onIntroRef = useCallback((el: HTMLElement | null) => {
-        setIntroSectionEl(el);
+    // Set boundary element after mount to ensure correct dimensions
+    useEffect(() => {
+        if (boundaryRef.current) {
+            setIntroSectionEl(boundaryRef.current);
+        }
     }, []);
 
     return (
@@ -53,83 +59,83 @@ function HomeComponent() {
             {/* Fluid Splash Cursor */}
             <SplashCursor boundaryElement={introSectionEl} />
 
-            {/* Intro Section - Parallax */}
-            <section
-                ref={onIntroRef}
-                className="relative h-screen flex items-center justify-center overflow-hidden"
-            >
-                <div className="relative z-10 max-w-4xl px-6 text-center">
-                    <h1 className="text-6xl md:text-9xl font-black tracking-tighter mb-6 leading-tight">
-                        <span
-                            ref={digitalRef}
-                            className="block will-change-transform"
-                        >
-                            DIGITAL
-                        </span>
-                        <span
-                            ref={architectRef}
-                            className="block text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-500 will-change-transform"
-                        >
-                            ARCHITECT
-                        </span>
-                    </h1>
-                    <p className="text-xl md:text-2xl text-zinc-400 max-w-2xl mx-auto mb-12 font-light">
-                        {PORTFOLIO_DATA.bio}
-                    </p>
-                    <div className="flex justify-center gap-6">
-                        {["React", "Typescript", "AI"].map((tech) => (
+            {/* Boundary wrapper - spans intro + skills to avoid parallax shift */}
+            <div ref={boundaryRef} className="relative">
+                {/* Intro Section - Parallax */}
+                <section className="relative h-screen flex items-center justify-center overflow-hidden">
+                    <div className="relative z-10 max-w-4xl px-6 text-center">
+                        <h1 className="text-6xl md:text-9xl font-black tracking-tighter mb-6 leading-tight">
                             <span
-                                key={tech}
-                                className="px-4 py-1 border border-zinc-800 rounded-full text-xs font-mono text-zinc-500 uppercase"
+                                ref={digitalRef}
+                                className="block will-change-transform"
                             >
-                                {tech}
+                                DIGITAL
                             </span>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="absolute bottom-12 left-1/2 -translate-x-1/2 animate-bounce">
-                    <ArrowRight className="rotate-90 text-zinc-600" />
-                </div>
-            </section>
-
-            {/* Tech Skills Loop */}
-            <div className="w-full bg-zinc-900 border-y border-zinc-800 py-8 overflow-hidden">
-                <div className="px-6">
-                    <h2 className="text-3xl font-bold text-center mb-8 text-zinc-400">
-                        SKILLS & TECHNOLOGIES
-                    </h2>
-                    <LogoLoop
-                        logos={SKILLS.map((skill) => ({
-                            node: (
-                                <span className="flex items-center gap-3 text-zinc-300 font-mono text-sm group/skill">
-                                    <span
-                                        className={`w-6 h-6 [&>svg]:w-full [&>svg]:h-full [&>svg]:fill-current text-zinc-300 transition-colors bg-white/5 rounded p-0.5`}
-                                        dangerouslySetInnerHTML={{
-                                            __html: skill.svg,
-                                        }}
-                                        style={{ color: skill.color }}
-                                    />
-                                    <span
-                                        className={`text-zinc-200 font-medium`}
-                                    >
-                                        {skill.name}
-                                    </span>
+                            <span
+                                ref={architectRef}
+                                className="block text-transparent bg-clip-text bg-gradient-to-r from-cyan-500 to-fuchsia-500 will-change-transform"
+                            >
+                                ARCHITECT
+                            </span>
+                        </h1>
+                        <p className="text-xl md:text-2xl text-zinc-400 max-w-2xl mx-auto mb-12 font-light">
+                            {PORTFOLIO_DATA.bio}
+                        </p>
+                        <div className="flex justify-center gap-6">
+                            {["React", "Typescript", "AI"].map((tech) => (
+                                <span
+                                    key={tech}
+                                    className="px-4 py-1 border border-zinc-800 rounded-full text-xs font-mono text-zinc-500 uppercase"
+                                >
+                                    {tech}
                                 </span>
-                            ),
-                            title: skill.name,
-                        }))}
-                        speed={60}
-                        direction="left"
-                        logoHeight={40}
-                        gap={48}
-                        pauseOnHover={true}
-                        hoverSpeed={0}
-                        scaleOnHover={true}
-                        className="py-4"
-                        width="100vw"
-                        ariaLabel="Skills and technologies carousel"
-                    />
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="absolute bottom-12 left-1/2 -translate-x-1/2 animate-bounce">
+                        <ArrowRight className="rotate-90 text-zinc-600" />
+                    </div>
+                </section>
+
+                {/* Tech Skills Loop */}
+                <div className="w-full bg-zinc-900 border-y border-zinc-800 py-8 overflow-hidden">
+                    <div className="px-6">
+                        <h2 className="text-3xl font-bold text-center mb-8 text-zinc-400">
+                            SKILLS & TECHNOLOGIES
+                        </h2>
+                        <LogoLoop
+                            logos={SKILLS.map((skill) => ({
+                                node: (
+                                    <span className="flex items-center gap-3 text-zinc-300 font-mono text-sm group/skill">
+                                        <span
+                                            className={`w-6 h-6 [&>svg]:w-full [&>svg]:h-full [&>svg]:fill-current text-zinc-300 transition-colors bg-white/5 rounded p-0.5`}
+                                            dangerouslySetInnerHTML={{
+                                                __html: skill.svg,
+                                            }}
+                                            style={{ color: skill.color }}
+                                        />
+                                        <span
+                                            className={`text-zinc-200 font-medium`}
+                                        >
+                                            {skill.name}
+                                        </span>
+                                    </span>
+                                ),
+                                title: skill.name,
+                            }))}
+                            speed={60}
+                            direction="left"
+                            logoHeight={40}
+                            gap={48}
+                            pauseOnHover={true}
+                            hoverSpeed={0}
+                            scaleOnHover={true}
+                            className="py-4"
+                            width="100vw"
+                            ariaLabel="Skills and technologies carousel"
+                        />
+                    </div>
                 </div>
             </div>
 
@@ -145,16 +151,16 @@ function HomeComponent() {
                         </span>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                         {PROJECTS.map((project) => (
                             <a
                                 key={project.title}
                                 href={project.link}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="group relative aspect-[4/3] bg-zinc-900 border border-zinc-800 overflow-hidden hover:border-zinc-700 transition-colors block"
+                                className="group relative bg-zinc-900 border border-zinc-800 overflow-hidden hover:border-zinc-700 transition-colors block"
                             >
-                                <div className="relative aspect-video bg-zinc-800 overflow-hidden mb-4 grayscale group-hover:grayscale-0 transition-all duration-500">
+                                <div className="relative  bg-zinc-800 overflow-hidden grayscale group-hover:grayscale-0 transition-all duration-500">
                                     <img
                                         src={project.image}
                                         alt={project.title}
@@ -163,16 +169,16 @@ function HomeComponent() {
                                     <div className="absolute inset-0 bg-cyan-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
                                 </div>
                                 <div className="p-4">
-                                    <div className="flex justify-between items-start mb-2">
-                                        <h3 className="text-2xl font-bold text-white group-hover:text-cyan-400 transition-colors">
+                                    <div className="flex justify-between items-start mb-2 gap-2">
+                                        <h3 className="text-xl md:text-2xl font-bold text-white group-hover:text-cyan-500 transition-colors">
                                             {project.title}
                                         </h3>
                                         <ExternalLink
                                             size={20}
-                                            className="text-zinc-600 group-hover:text-white transition-colors"
+                                            className="text-zinc-600 group-hover:text-white transition-colors shrink-0"
                                         />
                                     </div>
-                                    <p className="text-zinc-400 text-sm mb-4 line-clamp-2">
+                                    <p className="text-zinc-400 text-sm mb-4">
                                         {project.description}
                                     </p>
                                     <div className="flex flex-wrap gap-2">
@@ -255,7 +261,7 @@ function HomeComponent() {
             <section className="py-32 px-6 relative overflow-hidden">
                 <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20" />
                 <div className="max-w-7xl mx-auto relative z-10 text-center">
-                    <h2 className="text-6xl md:text-8xl font-black tracking-tighter mb-8 hover:text-cyan-400 transition-colors cursor-none interactive">
+                    <h2 className="text-6xl md:text-8xl font-black tracking-tighter mb-8 hover:text-cyan-500 transition-colors cursor-none interactive">
                         LET'S <br /> TALK
                     </h2>
                     <p className="text-zinc-400 text-xl max-w-2xl mx-auto">

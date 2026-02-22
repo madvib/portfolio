@@ -20,7 +20,7 @@ function MinigamePage() {
             <div className="max-w-6xl mx-auto mb-6">
                 <Link
                     to="/"
-                    className="inline-flex items-center gap-2 text-zinc-400 hover:text-cyan-400 transition-colors group"
+                    className="inline-flex items-center gap-2 text-zinc-400 hover:text-cyan-500 transition-colors group"
                 >
                     <ArrowLeft
                         size={20}

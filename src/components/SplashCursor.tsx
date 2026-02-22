@@ -81,7 +81,7 @@ export default function SplashCursor({
         // Uses (hover: none) to exclude touch-screen laptops that have a mouse
         const isMobileOnly =
             window.matchMedia &&
-            window.matchMedia("(hover: none) not (pointer: fine)").matches;
+            window.matchMedia("(hover: none) and (pointer: course)").matches;
 
         // Lower resolution on mobile for performance
         if (isMobileOnly) {
@@ -1601,17 +1601,17 @@ export default function SplashCursor({
         if (isMobileOnly) {
             // AMBIENT MODE: Multi-Emitter Generative Pattern
             // Use 3 pointers to create complex, interfering fluid dynamics (not just one "ghost cursor")
-            
+
             // Ensure we have enough pointers
             if (pointers.length < 3) {
-                pointers.push(new pointerPrototype());
-                pointers.push(new pointerPrototype());
+                pointers.push(pointerPrototype());
+                pointers.push(pointerPrototype());
             }
 
             let ambientRafId: number | null = null;
             let t = Math.random() * 100;
             const speed = 0.003; // Slow, languid
-            
+
             // Configuration for 3 distinct emitters
             // Each has unique Lissajous frequencies (prime-ish) to avoid synchronization
             const emitters = [
@@ -1629,11 +1629,14 @@ export default function SplashCursor({
                 p.prevTexcoordX = 0.5;
                 p.prevTexcoordY = 0.5;
             });
-            
+
             function ambientStep() {
                 // 1. Dynamic Boundary Check
-                let minX = 0, maxX = 1, minY = 0, maxY = 1;
-                
+                let minX = 0,
+                    maxX = 1,
+                    minY = 0,
+                    maxY = 1;
+
                 // Force re-measure to catch layout shifts
                 if (boundaryElement) {
                     const rect = boundaryElement.getBoundingClientRect();
@@ -1643,7 +1646,10 @@ export default function SplashCursor({
                     // If rect is inexplicably small (layout not ready), default to full screen temporarily
                     // This prevents the "tiny box" issue on initial load
                     if (rect.width < 100 || rect.height < 100) {
-                        minX = 0; maxX = 1; minY = 0; maxY = 1;
+                        minX = 0;
+                        maxX = 1;
+                        minY = 0;
+                        maxY = 1;
                     } else {
                         minX = Math.max(0, rect.left / canvasWidth);
                         maxX = Math.min(1, rect.right / canvasWidth);
@@ -1662,7 +1668,7 @@ export default function SplashCursor({
                 // Update all 3 pointers
                 emitters.forEach((config, i) => {
                     const pointer = pointers[i];
-                    
+
                     // Generative Path (Lissajous)
                     const x = Math.sin(t * config.fX + config.phase);
                     const y = Math.sin(t * config.fY + config.phase);
@@ -1674,7 +1680,7 @@ export default function SplashCursor({
                     // Update WebGL pointer data
                     const posX = finalX * canvas!.width;
                     const posY = (1 - finalY) * canvas!.height;
-                    
+
                     // Occasional color shift
                     if (Math.random() > 0.992) {
                         pointer.color = generateColor();
@@ -1711,10 +1717,7 @@ export default function SplashCursor({
                 if (!isWithinBoundary(e.clientX, e.clientY)) return;
 
                 const pointer = pointers[0];
-                const relativePos = getRelativePosition(
-                    e.clientX,
-                    e.clientY,
-                );
+                const relativePos = getRelativePosition(e.clientX, e.clientY);
                 const posX = scaleByPixelRatio(relativePos.x);
                 const posY = scaleByPixelRatio(relativePos.y);
                 const color = generateColor();
@@ -1731,10 +1734,7 @@ export default function SplashCursor({
                 if (!isWithinBoundary(e.clientX, e.clientY)) return;
 
                 const pointer = pointers[0];
-                const relativePos = getRelativePosition(
-                    e.clientX,
-                    e.clientY,
-                );
+                const relativePos = getRelativePosition(e.clientX, e.clientY);
                 const posX = scaleByPixelRatio(relativePos.x);
                 const posY = scaleByPixelRatio(relativePos.y);
                 const color = pointer.color;
@@ -1821,12 +1821,7 @@ export default function SplashCursor({
                     );
                     const posX = scaleByPixelRatio(relativePos.x);
                     const posY = scaleByPixelRatio(relativePos.y);
-                    updatePointerMoveData(
-                        pointer,
-                        posX,
-                        posY,
-                        pointer.color,
-                    );
+                    updatePointerMoveData(pointer, posX, posY, pointer.color);
                 }
             };
             addWindowListener("touchmove", handleTouchMove, false);

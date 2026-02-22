@@ -1,144 +1,132 @@
 ---
 id: domain-modeling-part3
-title: "Canonical Schemas as Source of Truth"
+title: "Part 3: Deriving Types from Validation Schemas"
 date: "2026-01-15"
-excerpt: "Schemas should be defined once and used everywhere. Learn how to centralize your Zod definitions for consistent validation across the stack."
-readTime: "7 min read"
+excerpt: "One schema, many models. Learn how to derive domain types, view types, and DTOs from a single validation schema to eliminate drift and duplication."
+readTime: "8 min read"
+tags:
+  - typescript
+  - domain-modeling
+  - zod
+  - validation
+series: Domain Modeling in TypeScript
+seriesPart: 3
 ---
 
 # Domain Modeling in TypeScript: A Practical Guide
 
-## Part 3: Canonical Schemas as Source of Truth
+## Part 3: Deriving Types from Validation Schemas
 
-*This is Part 3 of a 7-part series on domain modeling in TypeScript. [Read Part 2: Type-Safe Domain Security with Zod Brands](/blog/domain-modeling-part2) | [Read Part 4: Queries: Derived State and View Logic](/blog/domain-modeling-part4) next.*
+*This is Part 3 of a 5-part series on domain modeling in TypeScript. [Read Part 2: Type-Safe Domain Security with Brands](/blog/domain-modeling-part2) | [Read Part 4: Queries - Derived State and View Logic](/blog/domain-modeling-part4) next.*
 
 ---
 
-One of the most common problems in TypeScript applications is **type-runtime drift**: your TypeScript types say one thing, but the actual data at runtime is something else entirely.
+Most applications accumulate too many similar types. You end up with domain models, database models, view models, DTOs, and request/response types—all 90% the same, but maintained separately. When you change one, you have to carefully update the others.
 
-```typescript
-// Types say this...
-interface User {
-  email: string;
-  age: number;
-}
+This post shows how to flip that around: define your schema once, and derive everything else from it.
 
-// But runtime gets this...
-const user = { email: 123, age: "old" }; // Oops!
+## The Many Models Problem
 
-// TypeScript doesn't catch it because data came from external API
-const result = await fetch('/api/user').then(r => r.json() as User);
+A typical application has several representations of the same logical entity:
+
+```javascript
+┌─────────────────────────────────────────────────────────────────┐
+│                     Domain Model                                │
+│  • Immutable, validated                                         │
+│  • Owned by functional core (commands + queries)                │
+│  • Branded to prevent serialization leaks                       │
+│  • Contains computed/derived fields                             │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+         ┌────────────────────┼────────────────────┐
+         ▼                    ▼                    ▼
+┌─────────────────┐  ┌─────────────────-┐ ┌─────────────────┐
+│  Database Model │  │   View Model     │ │      DTOs       │
+│  (persistence)  │  │  (API response)  │ │ (HTTP/RPC/etc)  │
+│                 │  │                  │ │                 │
+│ • May flatten   │  │ • Date → string  │ │ • Validate      │
+│   nested objs   │  │ • Computed fields│ │   input         │
+│ • Snake_case    │  │ • Sensitive ops  │ │ • Serialize     │
+│ • ID only refs  │  │                  │ │   output        │
+└─────────────────┘  └─────────────────-┘ └─────────────────┘
 ```
 
-The solution? **Make schemas your source of truth** and derive everything else from them.
+Each transformation is a potential source of bugs:
+- Forgetting to serialize dates
+- Accidentally leaking sensitive fields
+- Database schema diverging from application types
 
-## The Traditional Approach (Type-First)
+## The Solution: Atomic Schemas with Composition
 
-Most TypeScript codebases start with types:
+The key insight is to define **one canonical schema** for each entity, then derive variants through composition:
 
-```typescript
-// types.ts
-export interface UserProfile {
-  userId: string;
-  displayName: string;
-  experienceLevel: 'beginner' | 'intermediate' | 'advanced';
-  createdAt: Date;
-}
-
-// validation.ts - duplicates the shape!
-export function validateUserProfile(data: unknown): UserProfile {
-  if (!data || typeof data !== 'object') {
-    throw new Error('Invalid user profile');
-  }
-  const profile = data as any;
-  
-  if (typeof profile.userId !== 'string') {
-    throw new Error('userId must be a string');
-  }
-  
-  if (typeof profile.displayName !== 'string') {
-    throw new Error('displayName must be a string');
-  }
-  
-  // ... 20 more lines of manual validation
-  
-  return profile as UserProfile;
-}
-
-// factory.ts - duplicates the shape again!
-export function createUserProfile(input: Partial<UserProfile>): UserProfile {
-  return {
-    userId: input.userId || generateId(),
-    displayName: input.displayName || 'Anonymous',
-    experienceLevel: input.experienceLevel || 'beginner',
-    createdAt: input.createdAt || new Date(),
-  };
-}
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                 Canonical Schema (atomic)                       │
+│  • Defines structure and validation                             │
+│  • Single source of truth                                       │
+│  • Can be composed into other schemas                           │
+└─────────────────────────────────────────────────────────────────┘
+                    │
+    ┌───────────────┼───────────────┬───────────────┐
+    ▼               ▼               ▼               ▼
+┌─────────┐   ┌─────────--┐   ┌─────────┐   ┌─────────┐
+│ Domain  │   │ Create    │   │  View   │   │  DTOs   │
+│ Schema  │   │ Schema    │   │ Schema  │   │ Schema  │
+│ (+brand)│   │(+defaults)│   │(+omit)  │   │(+input) │
+└─────────┘   └─────────--┘   └─────────┘   └─────────┘
 ```
 
-**Problems:**
+This approach gives you:
+- **Zero drift** between models
+- **Single place** to change validation rules
+- **Automatic propagation** of changes throughout the system
 
-1. **Three sources of truth** - type, validator, factory can drift apart
-2. **Manual validation** - error-prone and verbose
-3. **No transformation** - can't coerce types (string → Date)
-4. **Poor error messages** - "validation failed" doesn't say what's wrong
-5. **Maintenance burden** - change the type, update validation, update factory
+## Defining the Canonical Schema
 
-## The Schema-First Approach
-
-With Zod (or similar runtime validation libraries), we flip this around:
+Start with the validation schema as your source of truth:
 
 ```typescript
 // user-profile.types.ts
 import { z } from 'zod';
 
-// 1. Define the schema ONCE
-export const UserProfileSchema = z.object({
+// Define shape separately so it can be reused
+const UserProfileShape = {
   userId: z.uuid(),
   displayName: z.string().min(1).max(100),
   experienceLevel: z.enum(['beginner', 'intermediate', 'advanced']),
   createdAt: z.coerce.date<Date>(),
-}).brand<'SENSITIVE_DOMAIN_ENTITY'>();
+};
 
-// 2. Derive the type
+// The canonical schema - used as composition base
+export const UserProfileSchema = z.object(UserProfileShape)
+  .brand<'SENSITIVE_DOMAIN_ENTITY'>();
+
+// Derive the domain type
 export type UserProfile = Readonly<z.infer<typeof UserProfileSchema>>;
 ```
 
-**Benefits:**
+By extracting `UserProfileShape`, we can use it to build variants without the brand interfering (Zod's `.pick()` doesn't work well after `.brand()`).
 
-- **Single source of truth** - schema defines both runtime and compile-time shape
-- **Automatic validation** - `schema.parse()` throws helpful errors
-- **Type coercion** - `z.coerce.date()` converts strings to Dates
-- **Rich validation** - min/max, regex, custom refinements
-- **Type inference** - TypeScript type flows from schema
+## Deriving the Creation Schema
 
-Now validation and types can never drift:
-
-```typescript
-// Validation is automatic
-const profile = UserProfileSchema.parse(untrustedData);
-// ✅ If this succeeds, profile is guaranteed to match UserProfile type
-
-// Partial validation for updates
-const update = UserProfileSchema.partial().parse(partialData);
-```
-
-## Deriving Creation Schemas
-
-The real power comes from **reusing the base schema** to create API-specific schemas:
+When creating new entities, you need different validation rules:
+- Some fields are auto-generated (IDs, timestamps)
+- Some are optional with smart defaults
+- You want to validate input, then transform it into the full domain type
 
 ```typescript
 // user-profile.factory.ts
+import { UserProfileSchema, UserProfileShape } from './user-profile.types';
 
-// Reuse fields from base schema
-export const CreateUserProfileSchema = UserProfileSchema
+export const CreateUserProfileSchema = z.object(UserProfileShape)
   .pick({
     displayName: true,
     experienceLevel: true,
   })
   .extend({
-    userId: z.uuid().optional(), // Make optional for creation
-    createdAt: z.coerce.date<Date>().optional(),
+    userId: z.uuid().optional(),
+    createdAt: z.coerce.date().optional(),
   })
   .transform((input, ctx) => {
     const now = new Date();
@@ -150,7 +138,7 @@ export const CreateUserProfileSchema = UserProfileSchema
       createdAt: input.createdAt || now,
     };
     
-    // Validate against the full schema
+    // Validate against canonical schema to ensure completeness
     const result = UserProfileSchema.safeParse(data);
     if (!result.success) {
       return unwrapOrIssue(Result.fail(mapZodError(result.error)), ctx);
@@ -160,220 +148,197 @@ export const CreateUserProfileSchema = UserProfileSchema
   }) satisfies z.ZodType<UserProfile>;
 ```
 
-**What's happening:**
+This gives you:
+- Input validation (displayName required, experienceLevel must be valid enum)
+- Auto-generated fields (userId, createdAt)
+- Output that's guaranteed to match the domain type
 
-1. `.pick()` selects required fields from base schema
-2. `.extend()` adds optional fields for creation
-3. `.transform()` applies defaults and validates
-4. `satisfies z.ZodType<UserProfile>` ensures output matches domain type
+## Deriving View Schemas
 
-**Benefits:**
-
-- **DRY** - field definitions reused from base schema
-- **Type-safe** - input and output types are enforced
-- **Declarative** - clearly shows what's required vs. optional
-- **Validated** - final data passes through base schema
-
-## Real-World Example: Nested Value Objects
-
-Let's look at a complex entity with nested value objects:
+For API responses, you need to:
+- Remove sensitive fields
+- Serialize dates to ISO strings
+- Add computed fields
 
 ```typescript
-// user-profile.types.ts
+// user-profile.view.ts
+import { UserProfileSchema } from './user-profile.types';
+
+export type UserProfileView = CreateView<
+  UserProfile,
+  'sensitiveField1' | 'sensitiveField2', // Omit sensitive fields
+  {
+    // Add computed fields
+    memberSinceDays: number;
+    profileComplete: boolean;
+  }
+>;
+
+export function toUserProfileView(profile: UserProfile): UserProfileView {
+  return {
+    ...serializeForView(profile),
+    memberSinceDays: getMemberSinceDays(profile),
+    profileComplete: !!profile.bio && !!profile.avatar,
+  };
+}
+```
+
+The `CreateView` utility (discussed in Part 2) ensures you can't accidentally return branded domain types.
+
+## Deriving DTO Schemas
+
+For request/response on the wire, you need schemas that handle:
+- Input validation at API boundaries
+- Type coercion (strings to dates, etc.)
+- Protocol-specific transformations
+
+```typescript
+// user-profile.dto.ts
+import { UserProfileShape } from './user-profile.types';
+
+export const UpdateUserProfileDTO = z.object(UserProfileShape)
+  .partial()
+  .extend({
+    // Override types for wire format
+    createdAt: z.string().datetime().optional(),
+  });
+
+export type UpdateUserProfileDTO = z.infer<typeof UpdateUserProfileDTO>;
+```
+
+## Composing Nested Value Objects
+
+The real power shows when you have nested entities:
+
+```typescript
+// Define atomic shapes
+const ExperienceProfileShape = {
+  level: z.enum(['beginner', 'intermediate', 'advanced']),
+  yearsTraining: z.number().min(0),
+};
+
+const FitnessGoalsShape = {
+  primary: z.enum(['strength', 'endurance', 'hypertrophy', 'general']),
+  secondary: z.array(z.enum(['strength', 'endurance', 'hypertrophy', 'general'])),
+};
+
+// Compose into parent schema
 export const UserProfileSchema = z.object({
-  userId: z.uuid(),
-  displayName: z.string().min(1).max(100),
-  
-  // Nested value objects (also branded!)
-  experienceProfile: ExperienceProfileSchema,
-  fitnessGoals: FitnessGoalsSchema,
-  trainingConstraints: TrainingConstraintsSchema,
-  preferences: UserPreferencesSchema,
-  stats: UserStatsSchema,
-  
-  createdAt: z.coerce.date<Date>(),
-  updatedAt: z.coerce.date<Date>(),
-  lastActiveAt: z.coerce.date<Date>(),
+  ...UserProfileShape,
+  experienceProfile: z.object(ExperienceProfileShape),
+  fitnessGoals: z.object(FitnessGoalsShape),
 }).brand<'SENSITIVE_DOMAIN_ENTITY'>();
 ```
 
-The creation schema needs to:
-- Require some fields (userId, displayName)
-- Make others optional (nested objects)
-- Provide smart defaults for nested objects
-- Validate the complete entity
+Now each nested object has its own canonical schema, which can also be derived from:
 
 ```typescript
-export const CreateUserProfileSchema = UserProfileSchema
-  .pick({
-    userId: true,
-    displayName: true,
-    timezone: true,
-  })
-  .extend({
-    // Allow optional nested objects with their own creation schemas
-    experienceProfile: CreateExperienceProfileSchema.optional(),
-    fitnessGoals: CreateFitnessGoalsSchema.optional(),
-    trainingConstraints: CreateTrainingConstraintsSchema.optional(),
-    preferences: UserPreferencesSchema.optional(),
-    stats: UserStatsSchema.optional(),
-    
-    createdAt: z.coerce.date<Date>().optional(),
-    updatedAt: z.coerce.date<Date>().optional(),
-    lastActiveAt: z.coerce.date<Date>().optional(),
-  })
-  .transform((input, ctx) => {
-    const now = new Date();
-    
-    const data = {
-      ...input,
-      
-      // Smart defaults for nested objects
-      experienceProfile: input.experienceProfile || 
-        CreateExperienceProfileSchema.parse({
-          level: 'beginner',
-          capabilities: {
-            canDoFullPushup: false,
-            canDoFullPullup: false,
-            canRunMile: false,
-            canSquatBelowParallel: false,
-          },
-        }),
-      
-      fitnessGoals: input.fitnessGoals || 
-        CreateFitnessGoalsSchema.parse({
-          primary: 'strength',
-          secondary: [],
-          motivation: 'Improve overall health',
-          successCriteria: [],
-        }),
-      
-      trainingConstraints: input.trainingConstraints || 
-        CreateTrainingConstraintsSchema.parse({
-          location: 'mixed',
-          availableDays: ['Monday', 'Wednesday', 'Friday'],
-          availableEquipment: [],
-          maxDuration: 60,
-          injuries: [],
-        }),
-      
-      preferences: input.preferences || 
-        CreateUserPreferencesSchema.parse({}),
-      
-      stats: input.stats || 
-        CreateUserStatsSchema.parse({ joinedAt: now }),
-      
-      createdAt: input.createdAt || now,
-      updatedAt: input.updatedAt || now,
-      lastActiveAt: input.lastActiveAt || now,
-    };
-    
-    const result = validateAndBrand(data);
-    return unwrapOrIssue(result, ctx);
-  }) satisfies z.ZodType<UserProfile>;
+// Creation schema for nested object
+export const CreateExperienceProfileSchema = z.object(ExperienceProfileShape)
+  .transform((input) => ({
+    ...input,
+    capabilities: calculateCapabilities(input.level), // Add derived fields
+  }));
+
+// View schema for nested object
+export type ExperienceProfileView = CreateView<ExperienceProfile>;
 ```
 
-**Key pattern:**
-- Each nested value object has its own `CreateXSchema`
-- Defaults are applied declaratively in the transform
-- Final validation ensures completeness
-- Output type is guaranteed to be `UserProfile`
+## Validation at Every Boundary
 
-## Handling Zod's Quirks
+Each model serves a specific purpose at a specific boundary:
 
-Zod is powerful but has some gotchas when combined with `.brand()` and `.readonly()`:
-
-### Issue 1: `.pick()` After `.brand()` Fails
+| Boundary | Purpose | Schema |
+|----------|---------|--------|
+| HTTP Request | Sanitize & validate input | DTO Schema |
+| Domain Creation | Ensure valid entity | Create Schema |
+| Domain Storage | Persist validated entity | Domain Schema |
+| API Response | Safe serialization | View Schema |
+| External API | Match contract | DTO Schema |
 
 ```typescript
-// ❌ This doesn't work
-const Schema = z.object({...}).brand<'domain'>();
-const CreateSchema = Schema.pick({...}); // Type error!
+// API endpoint example
+app.patch('/users/:id/profile', (req, res) => {
+  // 1. Validate input (DTO schema)
+  const dto = UpdateUserProfileDTO.parse(req.body);
+  
+  // 2. Load existing domain entity
+  const profile = userProfileFromPersistence(existingData);
+  
+  // 3. Apply command (returns new domain entity)
+  const updated = updateProfile(profile, dto);
+  
+  // 4. Return view (can't leak domain type)
+  res.json(toUserProfileView(updated));
+});
 ```
 
-**Solution:** Don't brand the base schema used for `.pick()`:
+## Why This Eliminates Drift
+
+When you need to add a field:
+
+```
+1. Add to canonical schema
+   └─► TypeScript error in all derived schemas
+       └─► Fix each derivation
+           └─► Build succeeds, all models updated
+```
+
+Instead of:
+```
+1. Add to domain type
+2. Update validation
+3. Update factory
+4. Update view type
+5. Update DTO
+6. Update database model
+7. Hope you didn't miss any
+```
+
+## Handling Schema Composition
+
+Here are common patterns for composing schemas:
+
+### Shared Fields
 
 ```typescript
-// Define base shape
-const UserProfileShape = {
-  userId: z.uuid(),
-  displayName: z.string(),
-  // ...
+const Timestamps = {
+  createdAt: z.coerce.date(),
+  updatedAt: z.coerce.date(),
 };
 
-// Export branded schema
-export const UserProfileSchema = z.object(UserProfileShape)
-  .brand<'SENSITIVE_DOMAIN_ENTITY'>();
+const UserSchema = z.object({
+  ...Timestamps,
+  name: z.string(),
+});
 
-// Use unbounded shape for picking
-const CreateSchema = z.object(UserProfileShape)
-  .pick({...});
-```
-
-### Issue 2: Type Inference Lost with Modifiers
-
-```typescript
-// Inference breaks with too many modifiers
-const Schema = z.object({...})
-  .readonly()
-  .brand<'domain'>()
-  .strict();
-
-type T = z.infer<typeof Schema>; // Shows expanded type, not clean name
-```
-
-**Solution:** Apply `Readonly<>` at the type level:
-
-```typescript
-export const UserProfileSchema = z.object({...})
-  .brand<'SENSITIVE_DOMAIN_ENTITY'>();
-
-export type UserProfile = Readonly<z.infer<typeof UserProfileSchema>>;
-```
-
-### Issue 3: `.satisfies` vs Explicit Return Type
-
-```typescript
-// ❌ Breaks inference
-export const CreateSchema: z.ZodType<UserProfile> = ...;
-
-// ✅ Preserves inference
-export const CreateSchema = ...
-  .transform(...)
-  satisfies z.ZodType<UserProfile>;
-```
-
-The `satisfies` keyword checks output type without changing inference.
-
-## Validation Patterns
-
-### Pattern 1: Shared Field Definitions
-
-When multiple schemas share fields, extract them:
-
-```typescript
-// Shared fields
-const sharedFields = {
-  id: z.uuid(),
-  createdAt: z.coerce.date<Date>(),
-  updatedAt: z.coerce.date<Date>(),
-};
-
-export const UserSchema = z.object({
-  ...sharedFields,
-  displayName: z.string(),
-}).brand<'domain'>();
-
-export const PostSchema = z.object({
-  ...sharedFields,
+const PostSchema = z.object({
+  ...Timestamps,
   title: z.string(),
-  authorId: z.uuid(),
-}).brand<'domain'>();
+});
 ```
 
-### Pattern 2: Custom Refinements
+### Discriminated Unions
 
-For complex business rules:
+```typescript
+const WorkoutScheduled = z.object({
+  type: z.literal('scheduled'),
+  scheduledFor: z.coerce.date(),
+});
+
+const WorkoutCompleted = z.object({
+  type: z.literal('completed'),
+  completedAt: z.coerce.date(),
+  duration: z.number(),
+});
+
+export const WorkoutEventSchema = z.discriminatedUnion('type', [
+  WorkoutScheduled,
+  WorkoutCompleted,
+]);
+```
+
+### Custom Validation
 
 ```typescript
 export const WorkoutSchema = z.object({
@@ -381,137 +346,19 @@ export const WorkoutSchema = z.object({
   totalDuration: z.number(),
 }).refine(
   (data) => {
-    const calculatedDuration = data.exercises.reduce(
-      (sum, ex) => sum + ex.duration, 
-      0
-    );
-    return Math.abs(calculatedDuration - data.totalDuration) < 1;
+    const sum = data.exercises.reduce((s, e) => s + e.duration, 0);
+    return Math.abs(sum - data.totalDuration) < 1;
   },
-  {
-    message: 'Total duration must match sum of exercise durations',
-    path: ['totalDuration'],
-  }
-).brand<'domain'>();
+  { message: 'Total duration must match sum of exercises' }
+);
 ```
-
-### Pattern 3: Discriminated Unions
-
-For polymorphic entities:
-
-```typescript
-export const NotificationSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('workout_reminder'),
-    scheduledFor: z.coerce.date(),
-  }),
-  z.object({
-    type: z.literal('achievement_earned'),
-    achievementId: z.uuid(),
-  }),
-  z.object({
-    type: z.literal('streak_milestone'),
-    streakDays: z.number(),
-  }),
-]).brand<'domain'>();
-```
-
-## Migration Strategy
-
-If you have an existing codebase with types-first, migrate incrementally:
-
-**Step 1:** Add schemas alongside existing types
-
-```typescript
-// Keep existing type
-export interface User {
-  id: string;
-  email: string;
-}
-
-// Add new schema
-export const UserSchema = z.object({
-  id: z.uuid(),
-  email: z.email(),
-});
-
-// Ensure compatibility
-export type UserFromSchema = z.infer<typeof UserSchema>;
-// Check: User and UserFromSchema should be compatible
-```
-
-**Step 2:** Use schemas at API boundaries
-
-```typescript
-// Validate external data
-app.post('/users', (req, res) => {
-  const user = UserSchema.parse(req.body); // Now validated!
-  // ... rest of handler
-});
-```
-
-**Step 3:** Replace manual validation
-
-```typescript
-// Before
-function validateUser(data: unknown): User {
-  // 50 lines of manual checks
-}
-
-// After
-function validateUser(data: unknown): User {
-  return UserSchema.parse(data);
-}
-```
-
-**Step 4:** Deprecate old types
-
-```typescript
-/** @deprecated Use z.infer<typeof UserSchema> instead */
-export interface User {
-  // ...
-}
-```
-
-## Benefits Recap
-
-**Single Source of Truth**
-- Schema defines structure
-- Types derive from schema
-- No drift between runtime and compile-time
-
-**Better Validation**
-- Automatic, comprehensive
-- Helpful error messages
-- Type coercion built-in
-
-**Reusability**
-- `.pick()`, `.omit()`, `.partial()` create variants
-- Creation schemas reuse base schema
-- Nested schemas compose naturally
-
-**Type Safety**
-- Input validation at boundaries
-- Output types guaranteed
-- Compile-time + runtime checks
-
-**Developer Experience**
-- Less boilerplate
-- Better autocomplete
-- Clearer intent
 
 ## Key Takeaways
 
-1. **Define schemas first**, derive types second
-2. **Reuse base schemas** with `.pick()` and `.extend()` for creation
-3. **Use `.transform()` for defaults** and complex construction logic
-4. **Validate at boundaries** (API endpoints, external data)
-5. **Apply brands** to mark sensitive domain entities
-6. **Use `satisfies`** to preserve type inference
+1. **Define one canonical schema** as your source of truth
+2. **Extract shapes** so they can be composed without brand interference
+3. **Derive all variants** using `.pick()`, `.extend()`, `.partial()`, and transforms
+4. **Validate at every boundary** - input, output, and persistence
+5. **Compose nested schemas** to keep validation rules co-located with their entities
 
-Canonical schemas eliminate type-runtime drift and make your domain model self-documenting. When the schema changes, everything derived from it changes automatically—no manual synchronization required.
-
----
-
-**Next in this series:** Part 4 - Queries: Derived State and View Logic
-
-*See the complete implementation in the [example repository](#).*
+When your schema is the single source of truth, adding a field means changing it in one place. TypeScript propagates those changes everywhere automatically—no drift, no forgotten updates.

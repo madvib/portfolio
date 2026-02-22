@@ -1,48 +1,48 @@
 ---
 id: domain-modeling-part1
-title: "Domain Modeling in TypeScript: A Practical Guide"
+title: "Part 1: Architecture and Motivation"
 date: "2026-01-01"
-excerpt: "Learn how to build a unified domain layer across Node.js, Browser, and Edge using Functional Core principles for shared validation and data safety."
+excerpt: "Learn how to build a unified domain layer with type-safe schemas and clean patterns for maintainable domain logic."
 readTime: "7 min read"
+tags:
+  - typescript
+  - domain-modeling
+  - architecture
+series: Domain Modeling in TypeScript
+seriesPart: 1
 ---
 
 # Domain Modeling in TypeScript: A Practical Guide
 
 ## Part 1: Architecture and Motivation
 
-*This is Part 1 of a 7-part series on domain modeling in TypeScript. [Read Part 2: Type-Safe Domain Security with Zod Brands](/blog/domain-modeling-part2) next.*
+*This is Part 1 of a 5-part series on domain modeling in TypeScript. [Read Part 2: Type-Safe Domain Security with Brands](/blog/domain-modeling-part2) next.*
 
 ---
 
-When building a fitness coaching application, I needed my domain code to work in multiple environments: Node.js for the API server, browsers for client-side validation, Cloudflare Workers for edge functions, and Storybook for UI development. I also needed compile-time guarantees that sensitive data (credentials, tokens, PII) would never accidentally leak through API responses.
+When building a TypeScript library, I wanted a clean pattern for domain logic that would provide a solid foundation for future iteration. I was tired of type-only definitions drifting from runtime validation, business logic scattering across service layers, and view models being constructed ad-hoc—making it easy to forget date serialization or accidentally expose sensitive fields.
 
-Traditional approaches didn't cut it. Type-only definitions drift from runtime validation. Service layers accumulate business logic that becomes hard to test. View models get constructed ad-hoc, making it easy to forget date serialization or expose sensitive fields.
+I chose to derive TypeScript types from validation schemas to prevent this drift and eliminate duplication. For this project, I happened to use Zod, but many validation libraries could serve this purpose. The key insight is having a single source of truth that drives both validation and typing.
 
-This series documents the architecture I built to solve these problems, inspired by **Functional Core, Imperative Shell (FCIS)** principles and Domain-Driven Design.
+This series documents the architecture I built to solve these problems.
 
 ## Core Principles
 
-**1. Functional Core**
-Business logic lives in pure functions with no side effects:
-- Commands: `(entity, params) => Result<entity>`
-- Queries: `(entity) => value`
-- Factories: `(input) => Result<entity>`
-
-**2. Imperative Shell**
-Infrastructure code (I/O, databases, APIs) lives at the boundaries:
-- Repositories handle persistence
-- Controllers handle HTTP
-- Use cases orchestrate workflows
-
-**3. Single Source of Truth**
-Zod schemas define structure, validation, and types:
+**1. Derive Types from Validation Schemas**
+Using a validation library (Zod, in this case) as the single source of truth:
 - TypeScript types are derived, never written manually
-- Creation schemas reuse base schemas
-- No drift between compile-time and runtime
+- Creation schemas reuse base schemas via `.pick()` and `.extend()`
+- No drift between compile-time types and runtime validation
 
-**4. Compile-Time Safety**
-Branded types prevent entire classes of bugs:
-- Can't return domain entities from APIs
+**2. Pure Functions for Domain Logic**
+Business logic lives in side-effect-free functions:
+- Commands: `(entity, params) => Result<entity>` for mutations
+- Queries: `(entity) => value` for derived state
+- Factories: `(input) => Result<entity>` for controlled creation
+
+**3. Branded Types for API Safety**
+Type system enforcement prevents data leaks:
+- Can't return domain entities from API boundaries
 - Can't forget to serialize Dates
 - Can't leak sensitive nested fields
 
@@ -64,7 +64,7 @@ domain/
 Each file has a specific, well-defined responsibility:
 
 **Types (`.types.ts`)** - Single source of truth
-- Zod schema defines structure and validation
+- Validation schema defines structure and validation
 - TypeScript type is derived from schema
 - Domain brand marks sensitive entities
 
@@ -181,7 +181,7 @@ export const CreateUserProfileSchema = UserProfileSchema
   })
   .transform((input, ctx) => {
     const now = new Date();
-    
+  
     const data = {
       ...input,
       // Apply smart defaults
@@ -393,7 +393,6 @@ export class GetProfileUseCase {
 - Factory applies defaults automatically
 - Queries run during view mapping
 - Clean, readable orchestration
-- Functional core (domain logic) separated from imperative shell (I/O)
 
 ## Why This Architecture
 
@@ -410,58 +409,35 @@ describe('shouldReceiveCheckIn', () => {
 });
 ```
 
-**2. Portability**
-Using only Web Standard APIs means domain code runs anywhere:
-- Node.js API servers
-- Browser client-side validation
-- Cloudflare Workers edge functions
-- Storybook for UI development
-- Any JavaScript runtime
-
-**3. Type Safety**
+**2. Type Safety**
 Branded types prevent entire classes of bugs:
-```typescript
-// ❌ This won't compile
-async function getUser(id: string): Promise<UserProfile> {
-  const user = await repo.find(id);
-  return user; // Can't return branded type from API boundary
-}
+- Can't return domain entities from APIs
+- Can't forget to serialize Dates
+- Can't leak sensitive nested fields
 
-// ✅ Must use view
-async function getUser(id: string): Promise<UserProfileView> {
-  const user = await repo.find(id);
-  return toUserProfileView(user); // Compiler enforces this
-}
-```
-
-**4. Maintainability**
+**3. Maintainability**
 Single source of truth eliminates drift:
 - Change schema → types update automatically
 - Change domain logic → all consumers get it
 - Add field → compiler shows everywhere that needs updating
 
-**5. Clear Boundaries**
-Functional core vs imperative shell makes dependencies obvious:
-- Domain code has zero I/O
-- Infrastructure code coordinates
-- Easy to reason about, easy to refactor
+**4. Clear Separation**
+Domain logic is isolated from infrastructure:
+- Easy to reason about
+- Easy to refactor
 
 ## What's Coming
 
 Now that you understand the overall architecture, we'll dive deep into each component:
 
-**Part 2: Type-Safe Domain Security with Zod Brands** - How the brand system prevents data leaks at compile-time
+- **[Part 2: Type-Safe Domain Security with Brands](/blog/domain-modeling-part2)** — How branded types and the poison pill pattern prevent data leaks at compile-time
 
-**Part 3: Canonical Schemas as Source of Truth** - Why Zod schemas should drive everything, and how to handle the quirks
+- **[Part 3: Deriving Types from Validation Schemas](/blog/domain-modeling-part3)** — How to use schemas as single source of truth
 
-**Part 4: Queries - Derived State and View Logic** - CQRS-lite pattern for separating reads from writes
+- **[Part 4: Queries - Derived State and View Logic](/blog/domain-modeling-part4)** — Separating reads from writes
 
-**Part 5: ViewSafe - The Poison Pill Pattern** - Deep dive on `CreateView` and automatic nested brand detection
-
-**Part 6: Test Data Architecture** - Fixture factories, composition, and sharing test data across layers
-
-**Part 7: Isomorphic Domain Code** - Making domain portable across all JavaScript runtimes
+- **[Part 5: Test Data Architecture](/blog/domain-modeling-part5)** — Fixture factories, composition, and sharing test data across layers
 
 ---
 
-*This is Part 1 of a 7-part series on domain modeling in TypeScript. The complete pattern is in production powering a fitness coaching application.*
+*This is Part 1 of a 5-part series on domain modeling in TypeScript.*

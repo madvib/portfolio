@@ -1,16 +1,22 @@
 ---
 id: domain-modeling-part2
-title: "Type-Safe Domain Security with Zod Brands"
+title: "Part 2: Type-Safe Domain Security with Branded Types"
 date: "2026-01-08"
-excerpt: "Primitive obsession is the root of many security vulnerabilities. Discover how Zod brands can prevent data leaks relative to sensitive domain entities at compile-time."
+excerpt: "Primitive obsession is the root of many security vulnerabilities. Discover how branded types can prevent data leaks relative to sensitive domain entities at compile-time."
 readTime: "7 min read"
+tags:
+  - typescript
+  - domain-modeling
+  - security
+series: Domain Modeling in TypeScript
+seriesPart: 2
 ---
 
 # Domain Modeling in TypeScript: A Practical Guide
 
-## Part 2: Type-Safe Domain Security with Zod Brands
+## Part 2: Type-Safe Domain Security with Branded Types
 
-*This is Part 2 of a 7-part series on domain modeling in TypeScript. [Read Part 1: Architecture and Motivation](/blog/domain-modeling-part1) | [Read Part 3: Canonical Schemas as Source of Truth](/blog/domain-modeling-part3) next.*
+*This is Part 2 of a 5-part series on domain modeling in TypeScript. [Read Part 1: Architecture and Motivation](/blog/domain-modeling-part1) | [Read Part 3: Deriving Types from Validation Schemas](/blog/domain-modeling-part3) next.*
 
 ---
 
@@ -18,9 +24,11 @@ When building applications that handle sensitive data, one of the most dangerous
 
 TypeScript's type system is powerful, but standard types won't stop you from serializing a domain entity with sensitive fields directly into an API response. This is where **branded types** come in.
 
+> **Note:** While this post uses Zod for illustration (because it's what this project uses), the brand pattern works equally well with pure TypeScript type branding or other validation libraries. The key insight is using the type system to mark entities as unsafe for serialization—how you achieve that is a tooling choice.
+
 ## The Problem
 
-Consider this common scenario:
+Consider this scenario:
 
 ```typescript
 type User = {
@@ -41,7 +49,7 @@ Even experienced developers make this mistake. Code reviews catch some cases, bu
 
 ## The Solution: Branded Domain Types
 
-By using Zod's `.brand()` feature, we can mark domain entities as "unsafe for serialization" at the type level:
+By marking domain entities with a type brand, we can indicate "unsafe for serialization" at the type level. With Zod, this looks like:
 
 ```typescript
 import { z } from 'zod';
@@ -55,6 +63,12 @@ export const UserSchema = z.object({
 
 export type User = Readonly<z.infer<typeof UserSchema>>;
 ```
+
+> **Pure TypeScript alternative:** You can achieve the same effect with symbol-based type branding:
+> ```typescript
+> type Brand<T, B> = T & { [Symbol.iterator]: never } & { __brand: B };
+> type User = Brand<{ id: string; email: string; hashedPassword: string }, 'SENSITIVE_DOMAIN_ENTITY'>;
+> ```
 
 Now `User` has an invisible type brand that prevents it from being used in API responses. The compiler will reject any attempt to serialize it directly.
 
@@ -181,8 +195,7 @@ export function toConnectedServiceView(
   return {
     ...base,
     syncStatus: toSyncStatusView(service.syncStatus),
-    metadata: toServiceMetadataView(service.metadata),
-    
+    metadata: toServiceMetadataView(service.metadata), 
     // Computed fields from queries
     hasValidCredentials: !!service.credentials.accessToken,
     isSyncHealthy: Queries.isSyncHealthy(service),
@@ -216,12 +229,10 @@ The real power comes from detecting branded types **deep in object graphs**:
 export const UserProfileSchema = z.object({
   userId: z.uuid(),
   displayName: z.string(),
-  
   // These are ALSO branded domain entities
   experienceProfile: ExperienceProfileSchema, // Branded!
   fitnessGoals: FitnessGoalsSchema,           // Branded!
   stats: UserStatsSchema,                     // Branded!
-  
   createdAt: z.coerce.date(),
 }).brand<'SENSITIVE_DOMAIN_ENTITY'>();
 ```
@@ -375,9 +386,3 @@ For simple apps or prototypes, standard TypeScript types with careful code revie
 5. **Trust the compiler** - if it compiles, your data is safe
 
 Branded types turn security vulnerabilities into compile errors. By making sensitive domain entities incompatible with serialization contexts, we leverage TypeScript's type system to prevent entire classes of bugs before they reach production.
-
----
-
-**Next in this series:** Part 3 - Canonical Schemas as Source of Truth
-
-*Want to see the full implementation? Check out the [complete example on GitHub](#).*
