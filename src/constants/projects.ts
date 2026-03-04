@@ -4,8 +4,8 @@ export const PROJECTS: Project[] = [
     {
         id: "2",
         title: "GetShip",
-        description: "AI-first project management software",
-        tech: ["AI", "React", "TypeScript"],
+        description: "Desktop SDLC for AI engineers",
+        tech: ["Rust", "TypeScript", "React"],
         link: "https://getship.dev",
         image: "/getship.png",
     },
